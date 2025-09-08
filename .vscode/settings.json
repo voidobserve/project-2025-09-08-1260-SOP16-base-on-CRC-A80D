@@ -1,5 +1,7 @@
 {
     "files.associations": {
-        "LVD.C": "cpp"
+        "LVD.C": "cpp",
+        "include.h": "c",
+        "main.h": "c"
     }
 }

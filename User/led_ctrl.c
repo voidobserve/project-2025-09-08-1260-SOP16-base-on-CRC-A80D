@@ -22,9 +22,9 @@ extern u16 adc1_val;
 #define L_TEMP_PWR_T (1 * 30 * 60) // 过温半小时降功率
 // #define LEVLE_PER 184              // 每个档位对应的AD值 （20级挡位调节）
 // #define LEVLE_PER 92 // 每个档位对应的AD值 (40级挡位调节)
-#define LEVLE_PER 23 // 每个档位对应的AD值 (160级挡位调节)
+#define LEVLE_PER 23    // 每个档位对应的AD值 (160级挡位调节)
 #define ADJUST_STEP 160 // 调节级数，例如 20级、40级、160级
-#define DEAD_ZONE 5    // adc死区范围± 5
+#define DEAD_ZONE 5     // adc死区范围± 5
 
 bit ex_temp_en; // 过温降功率标志位
 // #define L_PWR_T     (1*10)
@@ -443,7 +443,7 @@ void cap_timer(void)
 // 连续获取5次，占空比稳定才输出
 u16 duty_buff[5];
 u8 duty_cnt = 0;
-// 上电采样5次完成标志为
+// 上电采样5次完成标志位
 u8 simple_over = 0;
 // 放主循环
 void get_duty(void)
@@ -465,6 +465,7 @@ void get_duty(void)
         cmp_duty();
     }
 
+    // 处于调光模式， led_state == LED_ADJ_P 或者 led_state == LED_ADJ_S，才会进入：
     if (adjust_ms == 3)
     {
         adjust_ms = 0;
@@ -573,22 +574,27 @@ u16 rus_duty; // 放大60倍
 // 1ms调用一次     LIN 改 加入电位器判断
 void led_pwr_on(void)
 {
+
+    // 上电模式，禁止调光，并且上电后采样了5次
     if (led_state == LED_PWR_ON && simple_over == 1)
     {
         // 没有电位器时
         // 没有三合一功能，上电默认最大占空比
-        //  有三合一功能，按采用的占空比调光
+        // 有三合一功能，按采用的占空比调光
         if (adjust_en == 0)
         {
             if (_3_1.en == 0)
             {
                 pwm_in_duty = max_duty;
             }
+
+#if 0
             r_ms = step / 12;
             if (r_ms < 1)
                 r_ms = 10;
             if (pwr_on_cnt < r_ms)
                 return; // 时间未到不调整
+
             pwr_on_cnt = 0;
             if (c_duty < pwm_in_duty)
             {
@@ -596,46 +602,129 @@ void led_pwr_on(void)
                 step += 0.5;
                 c_duty = pow(5, mi) * 60;
             }
+#endif
+
+            /*
+                调节范围：0 ~ pwm_in_duty，分成 60s，60 * 1000 ms
+                那么每ms调节 pwm_in_duty / (60 * 1000)
+
+                如果要在 0 ~ 0.75 * pwm_in_duty 的范围内，分成 45s
+                0.75 * pwm_in_duty ~ pwm_in_duty 的范围内，分成 15s
+                那么每 ms 调节
+
+                调节时间最长60s，如果pwm_in_duty < 6000，调节时间会有缩短
+                0 ~ 3000的占空比值，调节时间为 45s ，每ms调节约 0.067 的占空比值
+                3000 ~ 6000的占空比值，调节时间为 15s，每ms调节约 0.2 的占空比值
+            */
+            if (adjust_pwm_during_pwr_on >= 1)
+            {
+                adjust_pwm_during_pwr_on = 0;
+
+                if (c_duty <= (MAX_DUTY / 2)) // 0 ~ 50%的占空比值
+                {
+                    pwr_on_step += (double)0.067;
+                }
+                else // 50% ~ 100%的占空比值
+                {
+                    pwr_on_step += (double)0.2;
+                }
+
+                c_duty = (u16)pwr_on_step;
+            }
+
             if (c_duty >= pwm_in_duty)
             {
                 c_duty = pwm_in_duty;
-                led_state = LED_NULL;
+                pwr_on_step = 0;      // 退出开机缓启动前，清空步长
+                led_state = LED_NULL; // 退出开机缓启动
+                // printf("pwr on end\n");
             }
+
             set_pwm_duty();
         }
+
         if (adjust_en == 1) // 有没有三合一功能，上电都默认电位器的最大占空比
         {
             if (_3_1.en == 0)
             {
                 pwm_in_duty = ajust_duty;
             }
+
             if (_3_1.en == 1)
             {
                 pwm_in_duty = pwm_in_duty_xuwei;
             }
+
+#if 0
+            r_ms = step / 12;
+            if (r_ms < 1)
+                r_ms = 10;
+
+            if (pwr_on_cnt < r_ms)
+                return; // 时间未到不调整
+
+            pwr_on_cnt = 0;
+            if (c_duty < pwm_in_duty)
             {
-                r_ms = step / 12;
-                if (r_ms < 1)
-                    r_ms = 10;
-                if (pwr_on_cnt < r_ms)
-                    return; // 时间未到不调整
-                pwr_on_cnt = 0;
-                if (c_duty < pwm_in_duty)
-                {
-                    mi = (step - 1) / (253 / 3) - 1;
-                    step += 0.5;
-                    c_duty = pow(5, mi) * 60;
-                }
-                if (c_duty >= pwm_in_duty)
-                {
-                    c_duty = pwm_in_duty;
-                    led_state = LED_NULL;
-                }
-                set_pwm_duty();
+                mi = (step - 1) / (253 / 3) - 1;
+                step += 0.5;
+                c_duty = pow(5, mi) * 60;
             }
+#endif
+
+            /*
+                 调节范围：0 ~ pwm_in_duty，分成 60s，60 * 1000 ms
+                 那么每ms调节 pwm_in_duty / (60 * 1000)
+
+                 如果要在 0 ~ 0.75 * pwm_in_duty 的范围内，分成 45s
+                 0.75 * pwm_in_duty ~ pwm_in_duty 的范围内，分成 15s
+                 那么每 ms 调节
+
+                 调节时间最长60s，如果pwm_in_duty < 6000，调节时间会有缩短
+                 0 ~ 3000的占空比值，调节时间为 45s ，每ms调节约 0.067 的占空比值
+                 3000 ~ 6000的占空比值，调节时间为 15s，每ms调节约 0.2 的占空比值
+             */
+            if (adjust_pwm_during_pwr_on >= 1)
+            {
+                adjust_pwm_during_pwr_on = 0;
+
+                if (c_duty <= (MAX_DUTY / 2)) // 0 ~ 50%的占空比值
+                {
+                    pwr_on_step += (double)0.067;
+                }
+                else // 50% ~ 100%的占空比值
+                {
+                    pwr_on_step += (double)0.2;
+                }
+
+                c_duty = (u16)pwr_on_step;
+            }
+
+            // 防止占空比溢出：
+            if (c_duty >= pwm_in_duty)
+            {
+                c_duty = pwm_in_duty;
+                pwr_on_step = 0;      // 退出开机缓启动前，清空步长
+                led_state = LED_NULL; // 退出开机缓启动
+                // printf("pwr on end\n");
+            }
+
+            set_pwm_duty();
         }
     }
+
     // printf("pwm_in_duty= %d   t= %d    t_ctrl.level=%d    c_duty=%d\r\n", (int)pwm_in_duty,(int)t_ctrl.t,(int)ajust_duty,(int)c_duty);
+
+    // printf("test =========================\n"); // 测试函数进入时间，每次主循环都会进入，几乎没有时间间隔
+
+    // {
+    //     // 每隔一段时间，打印一次 c_duty：
+    //     if (user_debug_ms_cnt >= 100)
+    //     {
+    //         printf("c_duty = %u\n", c_duty);
+    //         user_debug_ms_cnt = 0;
+    //     }
+    // }
 }
 
 void led_plus(void)

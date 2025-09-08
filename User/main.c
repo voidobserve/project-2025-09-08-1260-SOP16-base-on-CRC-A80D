@@ -17,6 +17,14 @@ LED_S led_state;
 /* Private function prototypes -----------------------------------------------*/
 /* Private functions ---------------------------------------------------------*/
 
+/*
+    在开机缓启动期间，负责控制占空比调节时间
+*/
+volatile u8 adjust_pwm_during_pwr_on = 0;
+volatile double pwr_on_step = 0.0; // 开机缓启动的步长
+
+// volatile u8 user_debug_ms_cnt = 0; // 测试用
+
 /*********************************
 |--------------------------------|
 | 使用%d打印的数值不对时，请注意 |
@@ -111,7 +119,10 @@ void main(void)
         lvd_handler();
         // adc_val();//adc值
         adjust_pwm(); // 电位器值
-                      // dly_pwr_on =1;
+
+        // printf("main\n"); // 测试有没有卡死的情况
+                      
+        // dly_pwr_on =1;
     }
 #endif
 }
